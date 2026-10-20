@@ -139,7 +139,7 @@ model Audiobook {
 | Empty, null, ISBN-13, hyphenated, non-string, missing `media.metadata` | None; an existing ASIN is never blanked |
 | ISBN only | None (`isbn` is never read as an ASIN) |
 | File-hash ASIN sent but ABS reports none | None: store only what ABS reports |
-| No `plex_library` row / write throws | None / per-item catch, loop continues |
+| No `plex_library` row / write throws | None / own catch (logged; the item's match is not counted twice), loop continues |
 
 **Phase 2 (Request Match):** Match requests, no metadata triggering
 - Match requests to library items by ASIN/title/author
@@ -244,7 +244,7 @@ model Audiobook {
 - Fallback to fuzzy matching
 
 ## Fixed Issues
-- ✅ #287 window: ASIN from the ABS match was discarded until the next full scan → read back in the same scan (`match-missing-asins.ts`); BookDate right swipe now runs the same library check as `POST /api/requests`
+- ✅ #287 window: ASIN from the ABS match was discarded until the next full scan → read back in the same scan (`match-missing-asins.ts`); BookDate right swipe now runs the same checks as `POST /api/requests` (any user's downloaded/available request, then library) and returns `requestCreated` + `reason`
 
 ## Related
 - [Audiobookshelf Integration](../integrations/audiobookshelf.md) - Backend mode

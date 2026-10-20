@@ -92,6 +92,9 @@ describe('matchItemsWithoutAsin / storeMatchedAsin', () => {
 
     expect(prismaMock.plexLibrary.updateMany).toHaveBeenCalledTimes(2);
     expect(result.asinsStored).toBe(1);
+    // The failed store does not count item 'a' as a second fuzzy match (2 items, 2 fuzzy matches)
+    expect(result.fuzzyMatchCount).toBe(2);
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Failed to store the matched ASIN for "Book a"'));
   });
 
   it('a failing item fetch is caught per item and the loop continues', async () => {

@@ -153,10 +153,17 @@ export async function matchItemsWithoutAsin(
         result.fuzzyMatchCount++;
       }
 
-      // 5. Read the ASIN back so request checks see it now, not at the next scan
-      const stored = await storeMatchedAsin(item.externalId, item.title, outcome, logger);
-      if (stored === 'stored' || stored === 'changed') result.asinsStored++;
-      if (stored === 'changed') result.asinsChanged++;
+      // 5. Read the ASIN back so request checks see it now, not at the next scan. Own try/catch: the
+      //    match is already counted above, so a failed store must not count the item again.
+      try {
+        const stored = await storeMatchedAsin(item.externalId, item.title, outcome, logger);
+        if (stored === 'stored' || stored === 'changed') result.asinsStored++;
+        if (stored === 'changed') result.asinsChanged++;
+      } catch (error) {
+        logger.error(
+          `Failed to store the matched ASIN for "${item.title}": ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
     } catch (error) {
       logger.error(
         `Failed to process metadata match for "${item.title}": ${error instanceof Error ? error.message : 'Unknown error'}`

@@ -14,6 +14,9 @@ import { findPlexMatch } from '@/lib/utils/audiobook-matcher';
 
 const logger = RMABLogger.create('API.BookDateSwipe');
 
+/** Why a right swipe created no request (response field `reason`). */
+type SwipeSkipReason = 'alreadyInLibrary' | 'alreadyRequested' | 'libraryCheckFailed' | 'requestFailed';
+
 async function handler(req: AuthenticatedRequest) {
   try {
     const userId = req.user!.id;
@@ -63,30 +66,46 @@ async function handler(req: AuthenticatedRequest) {
     // This allows undo to work properly by keeping all the original data.
     // The recommendations endpoint filters out swiped cards.
 
-    // Same library check as POST /api/requests: a book already in the library is never requested (#287)
+    // The two checks POST /api/requests (createRequestForUser) runs before creating a request (#287):
+    // 1. any user's request for this ASIN is already downloaded/available (no duplicate download),
+    // 2. the book is already in the library. Either check failing creates no request (fail closed).
     const wantsRequest = action === 'right' && !markedAsKnown && Boolean(recommendation.audnexusAsin);
-    let alreadyInLibrary = false;
-    let libraryCheckFailed = false;
+    let skipReason: SwipeSkipReason | null = null;
+    let requestCreated = false;
     if (wantsRequest) {
       try {
-        const libraryMatch = await findPlexMatch({
-          asin: recommendation.audnexusAsin!,
-          title: recommendation.title,
-          author: recommendation.author,
-          narrator: recommendation.narrator || undefined,
+        const activeRequest = await prisma.request.findFirst({
+          where: {
+            audiobook: { audibleAsin: recommendation.audnexusAsin! },
+            type: 'audiobook',
+            status: { in: ['downloaded', 'available'] },
+            deletedAt: null,
+          },
+          select: { id: true, status: true },
         });
-        alreadyInLibrary = Boolean(libraryMatch);
-        if (alreadyInLibrary) {
-          logger.info(`"${recommendation.title}" is already in the library; no request created`);
+        if (activeRequest) {
+          skipReason = 'alreadyRequested';
+          logger.info(`"${recommendation.title}" already has a ${activeRequest.status} request; no request created`);
+        } else {
+          const libraryMatch = await findPlexMatch({
+            asin: recommendation.audnexusAsin!,
+            title: recommendation.title,
+            author: recommendation.author,
+            narrator: recommendation.narrator || undefined,
+          });
+          if (libraryMatch) {
+            skipReason = 'alreadyInLibrary';
+            logger.info(`"${recommendation.title}" is already in the library; no request created`);
+          }
         }
       } catch (error) {
-        libraryCheckFailed = true;
+        skipReason = 'libraryCheckFailed';
         logger.error('Library check failed; no request created', { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
     // If swiped right and not marked as known, create request
-    if (wantsRequest && !alreadyInLibrary && !libraryCheckFailed && recommendation.audnexusAsin) {
+    if (wantsRequest && !skipReason && recommendation.audnexusAsin) {
       try {
         // Fetch full details from Audnexus to get releaseDate, year, and series
         let year: number | undefined;
@@ -245,6 +264,7 @@ async function handler(req: AuthenticatedRequest) {
             },
           });
 
+          requestCreated = true;
           logger.info(`Created request for "${recommendation.title}" with status: ${initialStatus}`);
 
           if (releaseGateSkip) {
@@ -296,19 +316,25 @@ async function handler(req: AuthenticatedRequest) {
               logger.info(`Triggered search job for request ${newRequest.id}`);
             }
           }
+        } else {
+          skipReason = 'alreadyRequested';
         }
 
       } catch (error) {
         logger.error('Error creating request', { error: error instanceof Error ? error.message : String(error) });
         // Don't fail the swipe if request creation fails
+        if (!requestCreated) skipReason = 'requestFailed';
       }
     }
 
+    // requestCreated + reason say what a right swipe did (the swipe itself is always recorded)
     return NextResponse.json({
       success: true,
       action,
       markedAsKnown,
-      alreadyInLibrary,
+      requestCreated,
+      ...(skipReason ? { reason: skipReason } : {}),
+      alreadyInLibrary: skipReason === 'alreadyInLibrary',
     });
 
   } catch (error: any) {

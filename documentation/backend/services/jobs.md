@@ -160,7 +160,7 @@ queue.on('stalled', async (job) => {
 - **search_indexers:** 3 (avoid overwhelming indexers)
 - **monitor_download:** 5 (lightweight API calls)
 - **organize_files:** 2 (I/O intensive)
-- **scan_plex**, **plex_library_scan**, **plex_recently_added_check:** 1 each; separate named processors, so a manual scan, the scheduled scan and the recently-added check can run at the same time (ASIN writes are idempotent per `plexGuid`)
+- **scan_plex**, **plex_library_scan**, **plex_recently_added_check:** registered with 1, but this is not a per-type limit: Bull 4.16.5 sums the concurrency of every named processor on the queue and any free worker takes any job type, so two scans (even two of the same type) can overlap; ASIN writes are idempotent per `plexGuid`
 - **match_plex:** 3 (CPU bound)
 
 ## Fixed Issues ✅

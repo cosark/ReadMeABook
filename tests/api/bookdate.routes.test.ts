@@ -722,7 +722,9 @@ describe('BookDate routes', () => {
       audibleAsin: 'ASIN-YEAR',
     } as any);
     prismaMock.audiobook.update.mockResolvedValueOnce({ id: 'ab-year' } as any);
-    prismaMock.request.findFirst.mockResolvedValueOnce({ id: 'req-existing' } as any);
+    prismaMock.request.findFirst
+      .mockResolvedValueOnce(null) // no downloaded/available request by any user (#287 check)
+      .mockResolvedValueOnce({ id: 'req-existing' } as any); // this user's own request
 
     const { POST } = await import('@/app/api/bookdate/swipe/route');
     const response = await POST({} as any);
