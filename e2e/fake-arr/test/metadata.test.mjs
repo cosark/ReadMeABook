@@ -7,7 +7,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
-import { handleMetadata, refuseConnect, searchBooks } from '../src/metadata.js';
+import { EventEmitter } from 'node:events';
+import { handleMetadata, isFakedHost, refuseConnect, searchBooks } from '../src/metadata.js';
 
 const BOOKS = {
   one: { asin: 'B08G9PRS1K', title: 'Fixture Book One', author: 'Test Author', narrator: 'Test Narrator', runtimeMin: 970 },
@@ -90,4 +91,21 @@ test('never forwards: any other host is 403, Audible web is 404, CONNECT is refu
   });
   assert.match(reply, /^HTTP\/1\.1 403/);
   assert.equal(records.at(-1).method, 'CONNECT');
+});
+
+test('host is checked before method: a non-GET to any other host is 403, not 405', async () => {
+  assert.equal((await viaProxy('https://example.com/upload', 'POST')).status, 403);
+  assert.equal((await viaProxy('https://api.audible.com/1.0/catalog/products', 'PUT')).status, 405);
+  assert.equal(isFakedHost('API.Audnex.us'), true);
+  assert.equal(isFakedHost('api.audible.co.uk'), true);
+  assert.equal(isFakedHost('audnex.us.evil.example'), false);
+  assert.equal(isFakedHost(''), false);
+});
+
+test('a client error on a refused CONNECT socket does not throw', async () => {
+  const socket = new EventEmitter();
+  socket.remoteAddress = '127.0.0.1';
+  socket.end = () => {};
+  await refuseConnect(state, { url: 'api.audnex.us:443', headers: {} }, socket);
+  assert.doesNotThrow(() => socket.emit('error', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })));
 });

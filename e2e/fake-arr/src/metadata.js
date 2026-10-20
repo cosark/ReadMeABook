@@ -3,14 +3,16 @@
  * Documentation: documentation/testing/e2e-harness.md
  *
  * Used with `--overrides abs-fake-metadata`: Audiobookshelf and RMAB get HTTP(S)_PROXY pointing here.
- * axios sends an https target to an http proxy as a plain absolute-URI request, so this listener reads
- * the target host from the request line and answers itself. Nothing is ever forwarded: no real
- * provider is reached. Data comes from the fixture book index (offline fixtures: made-up titles);
- * every free-text field is synthetic.
+ * ABS (axios 0.27) sends an https target to an http proxy as a plain absolute-URI request, so this
+ * listener reads the target host from the request line and answers itself. RMAB (axios 1.x) opens a
+ * CONNECT tunnel instead; the fake refuses every CONNECT with 403 and records it, so it does NOT serve
+ * RMAB (RMAB's own Audible/Audnexus lookups fail, and nothing reaches a real provider). Nothing is ever
+ * forwarded. Data comes from the fixture book index (offline fixtures: made-up titles); every free-text
+ * field is synthetic.
  *   api.audible.<tld>  GET /1.0/catalog/products?title=&author=  → { products: [{ asin }] }
  *   api.audnex.us      GET /books/<ASIN>                         → Audnexus-shaped book (no image)
  *                      GET /authors?name=                        → []
- *   other Audible/Audnexus paths → 404; any other host or CONNECT → 403
+ *   other Audible/Audnexus paths → 404; non-GET to a faked host → 405; any other host or CONNECT → 403
  */
 
 import dns from 'node:dns/promises';
@@ -19,6 +21,12 @@ import { sendJson, sendText } from './http-util.js';
 const AUDIBLE_API = /^api\.audible\.(com|ca|co\.uk|com\.au|fr|de|co\.jp|it|in|es)$/;
 const AUDIBLE_WEB = /^(www\.)?audible\.(com|ca|co\.uk|com\.au|fr|de|co\.jp|it|in|es)$/;
 const AUDNEXUS = 'api.audnex.us';
+
+/** True for the hosts this fake stands in for; every other host gets 403. */
+export function isFakedHost(host) {
+  const h = String(host || '').toLowerCase();
+  return AUDIBLE_API.test(h) || AUDIBLE_WEB.test(h) || h === AUDNEXUS;
+}
 
 /** Host the client asked for: absolute-URI request line first, Host header otherwise. */
 export function targetOf(req) {
@@ -64,20 +72,31 @@ export function audnexusBook(book) {
   };
 }
 
-let names; // Promise<Map ip -> service name>, resolved once from the stack DNS
+const CLIENTS = ['abs', 'rmab'];
+const NAMES_RETRY_MS = 10_000;
+let names; // Promise<Map ip -> service name> from the stack DNS
+let namesAt = 0;
+let namesComplete = false;
 async function clientName(address) {
   const ip = String(address || '').replace(/^::ffff:/, '');
-  names ??= (async () => {
-    const map = new Map();
-    for (const svc of ['abs', 'rmab']) {
-      try {
-        for (const { address: a } of await dns.lookup(svc, { all: true })) map.set(a, svc);
-      } catch {
-        // service not on this network (unit tests)
+  // Kept for good once both services resolved; an incomplete map (a service not up yet, or no stack
+  // network in unit tests) is looked up again at most every NAMES_RETRY_MS.
+  if (!names || (!namesComplete && Date.now() - namesAt > NAMES_RETRY_MS)) {
+    namesAt = Date.now();
+    names = (async () => {
+      const map = new Map();
+      const found = new Set();
+      for (const svc of CLIENTS) {
+        try {
+          for (const { address: a } of await dns.lookup(svc, { all: true })) { map.set(a, svc); found.add(svc); }
+        } catch {
+          // service not resolvable (yet)
+        }
       }
-    }
-    return map;
-  })();
+      namesComplete = found.size === CLIENTS.length;
+      return map;
+    })();
+  }
   return (await names).get(ip) || ip;
 }
 
@@ -90,8 +109,11 @@ export async function handleMetadata(state, req, res, entry) {
   entry.path = target.pathname;
   entry.query = Object.fromEntries(target.searchParams.entries());
 
-  const books = state.fixtureIndex.books || {};
+  // Host first: an unfaked host is always 403, whatever the method.
+  if (!isFakedHost(host)) return sendText(res, 403, `fake metadata proxy: ${host} is not a faked provider`);
   if (req.method !== 'GET') return sendText(res, 405, 'GET only');
+
+  const books = state.fixtureIndex.books || {};
 
   if (AUDIBLE_API.test(host)) {
     if (target.pathname === '/1.0/catalog/products') {
@@ -111,13 +133,13 @@ export async function handleMetadata(state, req, res, entry) {
     return sendJson(res, 404, { error: 'not faked' });
   }
 
-  if (AUDIBLE_WEB.test(host)) return sendText(res, 404, 'not faked');
-
-  return sendText(res, 403, `fake metadata proxy: ${host} is not a faked provider`);
+  return sendText(res, 404, 'not faked'); // www.audible.<tld>
 }
 
 /** CONNECT tunnels are refused (and recorded): the fake can only answer absolute-URI requests. */
 export async function refuseConnect(state, req, socket) {
+  // A client reset (ECONNRESET/EPIPE) on this raw socket must not crash the fake.
+  socket.on('error', () => {});
   const entry = state.record({ service: 'metadata', method: 'CONNECT', host: String(req.url).split(':')[0], path: '', query: {}, headers: { ...req.headers }, status: 403 });
   socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
   entry.client = await clientName(socket.remoteAddress);

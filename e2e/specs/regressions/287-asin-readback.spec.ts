@@ -2,8 +2,9 @@
  * Component: E2E regression #287 (the ASIN from the Audiobookshelf match is stored in the same scan)
  * Documentation: documentation/testing/e2e-harness.md
  *
- * Run with: --offline-fixtures --overrides abs-fake-metadata (fake Audible/Audnexus for ABS and RMAB;
- * no real metadata provider is reached, and every title and summary is made up).
+ * Run with: --offline-fixtures --overrides abs-fake-metadata (ABS gets fake Audible/Audnexus answers;
+ * RMAB's own provider calls are CONNECT tunnels the fake refuses with 403, so no real metadata provider
+ * is reached; every title and summary is made up).
  * A book folder with no ASIN goes into the library; the real Audiobookshelf scan adds it; ONE RMAB
  * library scan triggers ABS's match (fuzzy, through the fake catalog). A request for that ASIN must
  * then be refused as already owned (409 AlreadyAvailable) without a second scan. On main before the
@@ -21,6 +22,8 @@ const FIXTURE = 'martian-mp3';
 const SCHEDULES = ['plex_recently_added_check', 'plex_library_scan', 'audible_refresh'];
 const SCAN_TYPES = `('scan_plex','plex_library_scan')`;
 const FAKE_PROXY = 'http://fake-arr:9898';
+/** Hosts the fake metadata proxy stands in for (mirrors e2e/fake-arr/src/metadata.js). */
+const FAKED_HOST = /^(api\.audible\.(com|ca|co\.uk|com\.au|fr|de|co\.jp|it|in|es)|(www\.)?audible\.(com|ca|co\.uk|com\.au|fr|de|co\.jp|it|in|es)|api\.audnex\.us)$/;
 
 type MetaRecord = { seq: number; service: string; host: string; path: string; status?: number; client?: string; method: string };
 
@@ -115,10 +118,14 @@ test('#287: a library item matched by ABS during one scan is refused as already 
   const requestRows = Number(psql(`select count(*) from requests r join audiobooks a on a.id = r.audiobook_id where a.audible_asin = ${sqlStr(book.asin)} and r.deleted_at is null`));
   const metaAll = ((await fakeArr.requests(seq0)) as unknown as MetaRecord[]).filter((r) => r.service === 'metadata');
   const forbidden = metaAll.filter((r) => r.status === 403).map((r) => `${r.client} ${r.method} ${r.host}${r.path}`);
+  // Every proxied call of the whole run (boot included), not just this window, went to a faked host.
+  const unfakedHosts = ((await fakeArr.requests(0)) as unknown as MetaRecord[])
+    .filter((r) => r.service === 'metadata' && !FAKED_HOST.test(String(r.host || '').toLowerCase()))
+    .map((r) => `${r.client} ${r.method} ${r.host}${r.path} ${r.status}`);
 
   writeEvidence('287/result.json', {
     book, absItemId: item.id, scanStatus, asinBefore, asinAfter, libraryAsin, scanRuns, recentRuns,
-    absMetadataCalls: absMeta, forbiddenMetadataCalls: forbidden,
+    absMetadataCalls: absMeta, forbiddenMetadataCalls: forbidden, unfakedHosts,
     metadataCalls: metaAll.map((r) => `${r.client} ${r.method} ${r.host}${r.path} ${r.status}`),
     request: { status: res.status, body }, requestRows,
   });
@@ -128,6 +135,7 @@ test('#287: a library item matched by ABS during one scan is refused as already 
   expect.soft(absMeta.some((c) => c.includes('/1.0/catalog/products 200')), 'ABS searched the fake Audible catalog').toBe(true);
   expect.soft(absMeta.some((c) => c.includes(`api.audnex.us/books/${book.asin} 200`)), 'ABS read the fake Audnexus book').toBe(true);
   expect.soft(forbidden, 'no metadata call left the fake providers').toEqual([]);
+  expect.soft(unfakedHosts, 'every metadata proxy call in the run targeted a faked host').toEqual([]);
   expect.soft(scanRuns, 'exactly one library scan').toBe(1);
   expect.soft(recentRuns, 'no recently-added check ran in the window').toBe(0);
   expect.soft(libraryAsin, 'plex_library has the matched ASIN after ONE scan').toBe(book.asin);
