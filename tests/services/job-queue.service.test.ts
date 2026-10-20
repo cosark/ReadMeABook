@@ -506,8 +506,9 @@ describe('JobQueueService', () => {
 
       await fireFailed('monitor_download', { requestId: 'req-1', downloadHistoryId: 'hist-1' });
 
-      expect(prismaMock.request.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: notCancelled }));
+      // Main overwrote the cancel with a plain update
       expect(prismaMock.request.update).not.toHaveBeenCalled();
+      expect(prismaMock.request.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: notCancelled }));
       expect(prismaMock.downloadHistory.update).not.toHaveBeenCalled();
     });
 
@@ -527,8 +528,9 @@ describe('JobQueueService', () => {
 
       await fireFailed('download_torrent', { requestId: 'req-1' });
 
-      expect(prismaMock.request.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: notCancelled }));
+      // Main overwrote the cancel with a plain update
       expect(prismaMock.request.update).not.toHaveBeenCalled();
+      expect(prismaMock.request.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: notCancelled }));
     });
   });
 

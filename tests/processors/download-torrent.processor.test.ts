@@ -396,13 +396,13 @@ describe('processDownloadTorrent', () => {
       const { processDownloadTorrent } = await import('@/lib/processors/download-torrent.processor');
       const result = await processDownloadTorrent(torrentPayload);
 
+      expect(addDownload).not.toHaveBeenCalled();
       expect(result).toMatchObject({ success: true, requestId: 'req-1' });
       expect(prismaMock.request.updateMany).toHaveBeenCalledWith(expect.objectContaining({
         where: liveOnly,
         data: expect.objectContaining({ status: 'downloading' }),
       }));
       expect(prismaMock.request.update).not.toHaveBeenCalled();
-      expect(addDownload).not.toHaveBeenCalled();
       expect(prismaMock.downloadHistory.create).not.toHaveBeenCalled();
       expect(jobQueueMock.addMonitorJob).not.toHaveBeenCalled();
     });
@@ -415,6 +415,7 @@ describe('processDownloadTorrent', () => {
       const { processDownloadTorrent } = await import('@/lib/processors/download-torrent.processor');
       await expect(processDownloadTorrent(torrentPayload)).rejects.toThrow('No torrent download client configured');
 
+      expect(prismaMock.request.update).not.toHaveBeenCalled();
       expect(prismaMock.request.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
         where: liveOnly,
         data: expect.objectContaining({ status: 'failed' }),

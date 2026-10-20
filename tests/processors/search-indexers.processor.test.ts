@@ -220,6 +220,9 @@ describe('processSearchIndexers', () => {
       jobId: 'job-r',
     })).rejects.toThrow('No indexers configured');
 
+    expect(prismaMock.request.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) })
+    );
     expect(prismaMock.request.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
       where: { id: 'req-r', deletedAt: null, status: { not: 'cancelled' } },
       data: expect.objectContaining({ status: 'failed' }),
