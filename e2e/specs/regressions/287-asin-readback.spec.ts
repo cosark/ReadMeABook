@@ -12,7 +12,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { Abs, authState, ctl, execBridgeAvailable, EXEC_BRIDGE_SKIP, fakeArr, Rmab, stackExecSync, urls, waitFor, writeEvidence } from '../../lib/harness';
+import { Abs, authState, ctl, execBridgeAvailable, EXEC_BRIDGE_SKIP, fakeArr, Rmab, stackExecSync, stackLogsSync, urls, waitFor, writeEvidence } from '../../lib/harness';
 import { dbNow, MEDIA, PGID, PUID, psql, q, sh, sqlStr } from './242-helpers';
 
 test.skip(!execBridgeAvailable(), EXEC_BRIDGE_SKIP);
@@ -33,7 +33,7 @@ const printenv = (service: string, name: string) => {
 };
 
 test('#287: a library item matched by ABS during one scan is refused as already owned', async () => {
-  test.setTimeout(600_000);
+  test.setTimeout(900_000);
 
   // 0. Guards: the fake metadata proxy is active for ABS and RMAB, and fixtures are the offline (made-up) ones.
   for (const service of ['abs', 'rmab']) {
@@ -57,6 +57,23 @@ test('#287: a library item matched by ABS during one scan is refused as already 
     const res = await rmab.raw('PUT', `/api/admin/jobs/${job!.id}`, { enabled: false });
     expect(res.status, `disable ${type}`).toBe(200);
   }
+  // At boot RMAB staggers "overdue" triggers from a list read before our disable, so a disabled scan
+  // or Audible refresh can still fire once. Let that burst finish before the window opens.
+  let lastOverdue = -1;
+  let changedAt = Date.now();
+  await waitFor('RMAB startup jobs settled', async () => {
+    const logs = stackLogsSync('rmab');
+    const overdue = (logs.match(/is overdue, triggering now/g) || []).length;
+    if (overdue !== lastOverdue) {
+      lastOverdue = overdue;
+      changedAt = Date.now();
+    }
+    const refreshStarts = (logs.match(/\[AudibleRefresh\] Starting Audible data refresh/g) || []).length;
+    const refreshEnds = (logs.match(/\[AudibleRefresh\] (Cleanup complete|Error:)/g) || []).length;
+    const scanStarts = (logs.match(/\[ScanLibrary\] Scanning library/g) || []).length;
+    const scanEnds = (logs.match(/\[ScanLibrary\] (Matched \d+\/\d+ requests|Error:)/g) || []).length;
+    return Date.now() - changedAt > 20_000 && refreshEnds >= refreshStarts && scanEnds >= scanStarts ? true : null;
+  }, { timeoutMs: 420_000, intervalMs: 3_000 });
   const t0 = dbNow();
   const seq0 = Math.max(0, ...(await fakeArr.requests()).map((r) => r.seq));
 

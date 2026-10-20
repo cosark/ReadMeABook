@@ -117,7 +117,8 @@ export async function handleMetadata(state, req, res, entry) {
 }
 
 /** CONNECT tunnels are refused (and recorded): the fake can only answer absolute-URI requests. */
-export function refuseConnect(state, req, socket) {
-  state.record({ service: 'metadata', method: 'CONNECT', host: String(req.url).split(':')[0], path: '', query: {}, headers: { ...req.headers }, status: 403 });
+export async function refuseConnect(state, req, socket) {
+  const entry = state.record({ service: 'metadata', method: 'CONNECT', host: String(req.url).split(':')[0], path: '', query: {}, headers: { ...req.headers }, status: 403 });
   socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+  entry.client = await clientName(socket.remoteAddress);
 }
