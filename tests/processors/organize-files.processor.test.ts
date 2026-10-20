@@ -972,13 +972,18 @@ describe('processOrganizeFiles', () => {
       prismaMock.request.updateMany.mockResolvedValue({ count: 0 });
 
       const { processOrganizeFiles } = await import('@/lib/processors/organize-files.processor');
+      // .catch: on main the import runs on and fails on the unmocked book; the assertion below is the proof
       const result = await processOrganizeFiles({
         requestId: 'req-c',
         audiobookId: 'a1',
         downloadPath: '/downloads/book',
         jobId: 'job-c',
-      });
+      }).catch((error: unknown) => error);
 
+      // Main overwrote the cancel with a plain 'processing' write and started the import
+      expect(prismaMock.request.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'processing' }) })
+      );
       expect(result).toMatchObject({ success: true, requestId: 'req-c' });
       expect(result.message).toContain('not imported');
       expect(prismaMock.request.updateMany).toHaveBeenCalledWith(expect.objectContaining({

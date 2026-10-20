@@ -390,6 +390,8 @@ describe('processDownloadTorrent', () => {
     it('adds nothing to the client when the request was cancelled before the job ran', async () => {
       // e.g. cancelled during the search, or between Bull retries
       prismaMock.request.updateMany.mockResolvedValue({ count: 0 });
+      // The shape main's plain update returned, so a run on main reaches the client call
+      prismaMock.request.update.mockResolvedValue({ type: 'audiobook', user: { plexUsername: 'testuser' } });
       const addDownload = vi.fn().mockResolvedValue('hash-1');
       setupQbit(addDownload);
 

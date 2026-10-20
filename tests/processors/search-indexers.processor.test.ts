@@ -196,14 +196,15 @@ describe('processSearchIndexers', () => {
       requestId: 'req-c',
       audiobook: { id: 'a-c', title: 'Book', author: 'Author' },
       jobId: 'job-c',
-    });
+    }).catch((error: unknown) => error); // on main the search runs on and errors
 
+    // Main overwrote the cancel with a plain 'searching' write and searched
+    expect(prismaMock.request.update).not.toHaveBeenCalled();
     expect(result).toMatchObject({ success: true, requestId: 'req-c' });
     expect(prismaMock.request.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'req-c', deletedAt: null, status: { not: 'cancelled' } },
       data: expect.objectContaining({ status: 'searching' }),
     }));
-    expect(prismaMock.request.update).not.toHaveBeenCalled();
     expect(prowlarrMock.searchWithVariations).not.toHaveBeenCalled();
     expect(jobQueueMock.addDownloadJob).not.toHaveBeenCalled();
   });
