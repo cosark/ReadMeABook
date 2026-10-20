@@ -230,10 +230,11 @@ export async function processMonitorDownload(payload: MonitorDownloadPayload): P
         },
       });
 
-      // The user cancelled while the download was finishing: never import it
-      if (request?.status === 'cancelled') {
-        logger.info(`Request ${requestId} was cancelled, not importing the finished download`);
-        return { success: true, completed: true, message: 'Request cancelled, download not imported', requestId };
+      // Cancelled or deleted while the download was finishing: don't queue the import
+      const stoppedAtCompletion = await getRequestStopReason(requestId);
+      if (stoppedAtCompletion) {
+        logger.info(`Request ${requestId} is ${stoppedAtCompletion}, not importing the finished download`);
+        return { success: true, completed: true, message: `Request ${stoppedAtCompletion}, download not imported`, requestId };
       }
 
       if (!request || !request.audiobook) {

@@ -512,7 +512,7 @@ export class TransmissionService implements IDownloadClient {
    * A stopped torrent with every wanted byte done (manual stop, or a global
    * ratio/idle limit) is finished, so it reports completed and gets imported.
    */
-  private mapStatus(status: TransmissionStatus, errorCode: number, percentDone = 0): DownloadStatus {
+  private mapStatus(status: TransmissionStatus, errorCode: number, percentDone: number): DownloadStatus {
     if (errorCode === LOCAL_ERROR) {
       return 'failed';
     }

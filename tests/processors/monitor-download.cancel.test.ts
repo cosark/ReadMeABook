@@ -133,6 +133,9 @@ describe('processMonitorDownload with a cancelled or deleted request', () => {
 
   it('does not import a download that finishes after the request was cancelled', async () => {
     // Active at the start of this poll, cancelled by the time the download finished
+    prismaMock.request.findUnique
+      .mockResolvedValueOnce(activeRequest)
+      .mockResolvedValueOnce({ ...activeRequest, status: 'cancelled' });
     prismaMock.request.findFirst.mockResolvedValue({ ...activeRequest, status: 'cancelled' });
     downloadClientManagerMock.getClientServiceForProtocol.mockResolvedValue(clientReporting('completed'));
 
@@ -188,6 +191,10 @@ describe('processMonitorDownload with a cancelled or deleted request', () => {
     expect(prismaMock.request.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) })
     );
+    expect(prismaMock.downloadHistory.update).toHaveBeenCalledWith({
+      where: { id: 'dh-1' },
+      data: { downloadStatus: 'failed', downloadError: 'Download failed in transmission' },
+    });
     expect(prismaMock.blockedRelease.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ source: 'download_fail', reasonDetail: 'No space left on device' }),
@@ -195,6 +202,21 @@ describe('processMonitorDownload with a cancelled or deleted request', () => {
     );
     expect(jobQueueMock.addNotificationJob).toHaveBeenCalledWith(
       'request_error', 'req-1', 'Book', 'Author', 'user', 'Download failed in transmission'
+    );
+  });
+
+  it('still marks an active request failed and notifies on a permanent monitor error', async () => {
+    downloadClientManagerMock.getClientServiceForProtocol.mockResolvedValue(null);
+
+    const { processMonitorDownload } = await import('@/lib/processors/monitor-download.processor');
+    await expect(processMonitorDownload(payload)).rejects.toThrow('No transmission client configured');
+
+    expect(prismaMock.request.updateMany).toHaveBeenCalledWith({
+      where: { id: 'req-1', deletedAt: null, status: { not: 'cancelled' } },
+      data: expect.objectContaining({ status: 'failed', errorMessage: 'No transmission client configured' }),
+    });
+    expect(jobQueueMock.addNotificationJob).toHaveBeenCalledWith(
+      'request_error', 'req-1', 'Book', 'Author', 'user', 'No transmission client configured'
     );
   });
 });
