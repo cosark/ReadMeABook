@@ -10,6 +10,7 @@ import { getAudibleService } from '@/lib/integrations/audible.service';
 import { getConfigService } from '@/lib/services/config.service';
 import { RMABLogger } from '@/lib/utils/logger';
 import { shouldSkipAutoSearch } from '@/lib/utils/release-date';
+import { findPlexMatch } from '@/lib/utils/audiobook-matcher';
 
 const logger = RMABLogger.create('API.BookDateSwipe');
 
@@ -62,8 +63,30 @@ async function handler(req: AuthenticatedRequest) {
     // This allows undo to work properly by keeping all the original data.
     // The recommendations endpoint filters out swiped cards.
 
+    // Same library check as POST /api/requests: a book already in the library is never requested (#287)
+    const wantsRequest = action === 'right' && !markedAsKnown && Boolean(recommendation.audnexusAsin);
+    let alreadyInLibrary = false;
+    let libraryCheckFailed = false;
+    if (wantsRequest) {
+      try {
+        const libraryMatch = await findPlexMatch({
+          asin: recommendation.audnexusAsin!,
+          title: recommendation.title,
+          author: recommendation.author,
+          narrator: recommendation.narrator || undefined,
+        });
+        alreadyInLibrary = Boolean(libraryMatch);
+        if (alreadyInLibrary) {
+          logger.info(`"${recommendation.title}" is already in the library; no request created`);
+        }
+      } catch (error) {
+        libraryCheckFailed = true;
+        logger.error('Library check failed; no request created', { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
     // If swiped right and not marked as known, create request
-    if (action === 'right' && !markedAsKnown && recommendation.audnexusAsin) {
+    if (wantsRequest && !alreadyInLibrary && !libraryCheckFailed && recommendation.audnexusAsin) {
       try {
         // Fetch full details from Audnexus to get releaseDate, year, and series
         let year: number | undefined;
@@ -285,6 +308,7 @@ async function handler(req: AuthenticatedRequest) {
       success: true,
       action,
       markedAsKnown,
+      alreadyInLibrary,
     });
 
   } catch (error: any) {

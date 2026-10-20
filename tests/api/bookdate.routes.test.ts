@@ -66,6 +66,8 @@ vi.mock('@/lib/bookdate/helpers', () => bookdateHelpersMock);
 describe('BookDate routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Right swipes run the real library check (findPlexMatch); default: book not in the library
+    prismaMock.plexLibrary.findMany.mockResolvedValue([]);
     authRequest = { user: { id: 'user-1', role: 'admin' }, json: vi.fn() };
     requireAuthMock.mockImplementation((_req: any, handler: any) => handler(authRequest));
     requireAdminMock.mockImplementation((_req: any, handler: any) => handler(authRequest));

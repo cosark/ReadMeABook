@@ -23,6 +23,7 @@
 1. **Setup:** Admin configures AI provider, API key, model, library scope, and custom prompt (global for all users)
 2. **Discovery:** AI generates personalized audiobook recommendations based on each user's individual Plex library, ratings, and swipe history
 3. **Interaction:** Swipe right (request), left (not interested), or up (neutral) on recommendations
+   - Right swipe runs the same library check as `POST /api/requests` (`findPlexMatch`); already owned → no request, response `alreadyInLibrary: true`; check fails → no request (swipe still recorded)
 4. **Learning:** AI refines future recommendations based on individual swipe history
 
 ### Key Differentiation

@@ -72,12 +72,14 @@ Manages background job queue using Bull (Redis-backed) for async tasks: searchin
 - Matched requests → 'available' status with plexGuid/absItemId linked
 - Clears errorMessage and retry counters on match
 - Use case: Manual library imports automatically complete stuck requests
+- ABS: items without ASIN → ABS match → ASIN from the response stored before request matching (#287, [file-hash-matching.md](../../fixes/file-hash-matching.md#asin-read-back-287))
 
 **plex_recently_added_check:**
 - Polls recently added items (top 10) every 5 minutes
 - Matches all non-terminal request statuses against new library items
 - Same matching logic as scan_plex (ASIN priority, fuzzy fallback)
 - Clears error state and retry counters on match
+- ABS: same match + ASIN read-back as scan_plex (shared `matchItemsWithoutAsin`)
 
 ## Job Payloads
 
@@ -158,7 +160,7 @@ queue.on('stalled', async (job) => {
 - **search_indexers:** 3 (avoid overwhelming indexers)
 - **monitor_download:** 5 (lightweight API calls)
 - **organize_files:** 2 (I/O intensive)
-- **scan_plex:** 1 (only one scan at a time)
+- **scan_plex**, **plex_library_scan**, **plex_recently_added_check:** 1 each; separate named processors, so a manual scan, the scheduled scan and the recently-added check can run at the same time (ASIN writes are idempotent per `plexGuid`)
 - **match_plex:** 3 (CPU bound)
 
 ## Fixed Issues ✅
