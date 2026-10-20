@@ -66,6 +66,11 @@ Evaluates and scores torrents to automatically select best audiobook download.
   1. Exact substring match: "dennis e. taylor" in torrent
   2. High fuzzy similarity (≥ 0.85): handles spacing/punctuation
   3. Core components present: First name + Last name within 30 chars
+  4. Initials match: runs of 2+ single letters collapsed on both sides, then matched as whole words (`src/lib/utils/author-initials.ts`)
+     - ✅ "TJ Klune" ↔ "T J Klune", "J D Robb" ↔ "JD Robb", "J.K. Rowling" ↔ "JK Rowling"
+     - ❌ "E. L. James" vs "Michael James", "A. J. Smith" vs "Raj Smith" (no partial-word match)
+     - Digits never join ("Book 1 T J Klune" → "book 1 tj klune"); a lone initial is untouched ("J. Smith" ≠ "John Smith")
+     - Pure OR on top of checks 1-3; never rejects anything they accept
 - Handles variations:
   - Middle initials: "Dennis E. Taylor" ↔ "Dennis Taylor"
   - Name order: "Brandon Sanderson" ↔ "Sanderson, Brandon"
