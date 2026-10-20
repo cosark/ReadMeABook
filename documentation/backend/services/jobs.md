@@ -52,6 +52,11 @@ Manages background job queue using Bull (Redis-backed) for async tasks: searchin
 - 10s delay between checks (prevents excessive logging)
 - Only logs progress at 5% intervals or first 5%
 - Auto-reschedules until complete/failed
+- **Cancelled/deleted requests** (`src/lib/utils/request-stop-guard.ts`):
+  - Each poll first reads the request; cancelled, soft-deleted or missing → stop (no client call, no write, no re-queue)
+  - Completion path: request cancelled meanwhile → no `organize_files` (never imports a cancelled request)
+  - Every `failed` write is one conditional `updateMany` (`where: { id, deletedAt: null, status: { not: 'cancelled' } }`): monitor client-failure branch, monitor PATH 3, and the `monitor_download` / `download_torrent` permanent-failure handlers in `job-queue.service.ts`
+  - Write matched 0 rows → leave the request alone: no blocklist entry, no `request_error` notification, no download-history `failed` (job-queue handler)
 
 **search_indexers:**
 - No torrents found → 'awaiting_search' status (not failed)
