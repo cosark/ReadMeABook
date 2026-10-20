@@ -144,20 +144,22 @@ export async function triggerABSScan(libraryId: string) {
 /**
  * Client-side bound on POST /items/:id/match. ABS answers only after the match is done and saved:
  * up to 3 catalog searches (10 s each) plus parallel Audnexus lookups (10 s each), and fuzzy
- * author validation has no timeout of its own, so about 60 s is a legitimate match. If RMAB
- * gives up, nothing is written; ABS may still finish, and the next scan reads its ASIN.
+ * author validation has no timeout of its own, so about 60 s is a legitimate match. Without this
+ * bound Node's fetch would stop at its 300 s headers timeout. If RMAB gives up, nothing is
+ * written; ABS may still finish, and the next scan reads its ASIN.
  */
 export const ABS_MATCH_TIMEOUT_MS = 180_000;
 
-/**
- * Result of a metadata match. `matched` carries ABS's library item after the match
- * (ASIN at libraryItem.media.metadata.asin, possibly still empty).
- */
+/** The parts of ABS's library item (toOldJSONExpanded) that the ASIN read-back uses. */
 export interface ABSMatchedLibraryItem {
   id?: string;
   media?: { metadata?: { asin?: unknown; isbn?: unknown; [key: string]: unknown } };
 }
 
+/**
+ * Result of a metadata match. `matched` carries ABS's library item after the match
+ * (ASIN at libraryItem.media.metadata.asin, possibly still empty).
+ */
 export type ABSMatchOutcome =
   | { status: 'matched'; updated: boolean; libraryItem: ABSMatchedLibraryItem | null }
   | { status: 'no_match'; warning: string }
